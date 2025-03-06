@@ -6,36 +6,37 @@
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 MFRC522::MIFARE_Key key;
-byte bloque = 4;  // Bloque donde se escribirá la clave
-
-String claveEncriptada = "";  // Almacenar la clave encriptada recibida
+byte bloque = 4; // Bloque donde se escribirá la clave encriptada
 
 void setup() {
     Serial.begin(9600);
     SPI.begin();
     rfid.PCD_Init();
-    Serial.println("Esperando clave encriptada...");
+    Serial.println("Esperando una tarjeta...");
 }
 
 void loop() {
-    // Leer la clave encriptada del puerto serial
-    if (Serial.available()) {
-        claveEncriptada = Serial.readStringUntil('\n');  // Leer la clave hasta nueva línea
-        Serial.print("Clave encriptada recibida: ");
-        Serial.println(claveEncriptada);
-        Serial.println("Clave recibida correctamente");
-    }
-
-    // Si no hay tarjeta, salir del loop
+    // Esperar hasta que se detecte una nueva tarjeta
     if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
         return;
     }
 
-    Serial.println("Tarjeta detectada. Intentando escribir...");
+    Serial.println("Tarjeta detectada. Solicitando clave...");
 
-    // Autenticar el bloque
+    // Solicitar clave a la Raspberry Pi
+    Serial.println("SOLICITAR_CLAVE");
+
+    // Esperar respuesta con la clave encriptada
+    String claveEncriptada = "";
+    while (Serial.available() == 0);  // Esperar datos
+    claveEncriptada = Serial.readStringUntil('\n');
+
+    Serial.print("Clave encriptada recibida: ");
+    Serial.println(claveEncriptada);
+
+    // Autenticar el bloque para escritura
     MFRC522::StatusCode status;
-    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF; // Clave de fábrica
 
     status = rfid.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, bloque, &key, &(rfid.uid));
     if (status != MFRC522::STATUS_OK) {
@@ -44,7 +45,7 @@ void loop() {
         return;
     }
 
-    // Convertir la clave encriptada a formato byte para escribir en la tarjeta
+    // Convertir la clave encriptada a formato byte
     byte buffer[16];
     memset(buffer, 0, 16);
     memcpy(buffer, claveEncriptada.c_str(), min(claveEncriptada.length(), 16));
@@ -55,11 +56,10 @@ void loop() {
         Serial.print("Error al escribir: ");
         Serial.println(rfid.GetStatusCodeName(status));
     } else {
-        Serial.println("Clave encriptada escrita con éxito.");
+        Serial.println("✅ Clave escrita en la tarjeta.");
     }
 
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
-    Serial.println("🔄 Listo para la siguiente tarjeta...");
-    delay(1000);
+    Serial.println("🔄 Esperando otra tarjeta...");
 }
